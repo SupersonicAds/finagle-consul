@@ -82,7 +82,7 @@ class ConsulCatalogResolver extends Resolver {
       case Throw(t) =>
         log.warning(t, s"Exception throw while querying Consul for service discovery")
         timer.doLater(Duration(1, TimeUnit.SECONDS)) {
-          cycle("0")
+          cycle(index)
         }
     } else Future.Done
 
