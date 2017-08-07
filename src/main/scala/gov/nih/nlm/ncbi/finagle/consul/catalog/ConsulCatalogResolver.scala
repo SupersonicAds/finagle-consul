@@ -27,10 +27,12 @@ class ConsulCatalogResolver extends Resolver {
   @volatile
   private var consulIndex: Float = 0
 
+  private val scopedMetrics = ClientStatsReceiver.scope("consul_catalog_resolver")
+
   // not used by the code, but has to be referenced here so that the gauge doesn't get garbage collected
-  private val consulIndexGauge = ClientStatsReceiver
-    .scope("consul_catalog_resolver")
-    .addGauge("consul_index")(consulIndex)
+  private val consulIndexGauge = scopedMetrics.addGauge("consul_index")(consulIndex)
+
+  private val fecthFailureCounter = scopedMetrics.counter("fetch_errors_counter")
 
   private def datacenterParam(q: ConsulQuery): List[(String, String)] = {
     q.dc
@@ -67,24 +69,32 @@ class ConsulCatalogResolver extends Resolver {
     client(req)
   }
 
+  private def updateConsulIndex(index: String) =
+    Try(index.toFloat).foreach(index => consulIndex = index)
+
   def addrOf(hosts: String, query: ConsulQuery): Var[Addr] = Var.async(Addr.Pending: Addr) { update =>
     @volatile var running = true
 
-    def cycle(index: String): Future[Unit] = if (running) fetch(hosts, query, index) transform {
-      case Return(response) =>
-        val as = jsonToAddresses(parse(response.getContentString()))
-        update() = Addr.Bound(as.map(Address(_)))
-        val idx = response.headerMap.getOrElse("X-Consul-Index", "0")
+    def cycle(index: String): Future[Unit] =
+      if (running) {
+        updateConsulIndex(index)
 
-        Try(idx.toFloat).foreach(index => consulIndex = index)
+        fetch(hosts, query, index) transform {
+          case Return(response) =>
+            val as = jsonToAddresses(parse(response.getContentString()))
+            update() = Addr.Bound(as.map(Address(_)))
+            val idx = response.headerMap.getOrElse("X-Consul-Index", "0")
 
-        cycle(idx)
-      case Throw(t) =>
-        log.warning(t, s"Exception throw while querying Consul for service discovery")
-        timer.doLater(Duration(1, TimeUnit.SECONDS)) {
-          cycle(index)
+            cycle(idx)
+          case Throw(t) =>
+            log.warning(t, s"Exception throw while querying Consul for service discovery")
+            fecthFailureCounter.incr()
+
+            timer.doLater(Duration(1, TimeUnit.SECONDS)) {
+              cycle(index)
+            }
         }
-    } else Future.Done
+      } else Future.Done
 
     cycle("0")
 
