@@ -13,9 +13,10 @@ import org.json4s._
 import org.json4s.jackson.JsonMethods._
 
 /**
- * A finagle Resolver for services registered in the consul catalog
- */
+  * A finagle Resolver for services registered in the consul catalog
+  */
 class ConsulCatalogResolver extends Resolver {
+
   import ConsulCatalogResolver._
 
   override val scheme: String = "consul"
@@ -38,7 +39,7 @@ class ConsulCatalogResolver extends Resolver {
   }
 
   private def tagParams(q: ConsulQuery): List[(String, String)] = {
-    q.tags.toList.map { "tag" -> _ }
+    q.tags.toList.map {"tag" -> _}
   }
 
   private def mkPath(q: ConsulQuery, idx: String) = {
@@ -51,11 +52,11 @@ class ConsulCatalogResolver extends Resolver {
   private def jsonToAddresses(json: JValue): Set[InetSocketAddress] = {
     json
       .extract[Set[HealthJson]]
-      .map { ex => new InetSocketAddress(Option(ex.Service.Address).filterNot(_.isEmpty).getOrElse(ex.Node.Address), ex.Service.Port)}
+      .map { ex => new InetSocketAddress(Option(ex.Service.Address).filterNot(_.isEmpty).getOrElse(ex.Node.Address), ex.Service.Port) }
   }
 
 
-  private def fetch(hosts: String, q: ConsulQuery, idx: String) : Future[Response] = {
+  private def fetch(hosts: String, q: ConsulQuery, idx: String): Future[Response] = {
     val client = ConsulHttpClientFactory.getClient(hosts)
     val path = mkPath(q, idx)
     val req = Request(Method.Get, path)
@@ -78,12 +79,13 @@ class ConsulCatalogResolver extends Resolver {
         Try(idx.toFloat).foreach(index => consulIndex = index)
 
         cycle(idx)
-      case Throw(t) => timer.doLater(Duration(1, TimeUnit.SECONDS)) {
+      case Throw(t) =>
         log.warning(t, s"Exception throw while querying Consul for service discovery")
-
-        cycle("0")
-      }
+        timer.doLater(Duration(1, TimeUnit.SECONDS)) {
+          cycle("0")
+        }
     } else Future.Done
+
     cycle("0")
 
     Closable make { _ => running = false; Future.Done }
@@ -106,14 +108,14 @@ object ConsulCatalogResolver {
   case class HealthJson(Node: NodeHealthJson, Service: ServiceHealthJson)
 
   case class ServiceHealthJson(
-    ID: Option[String],
-    Service: String,
-    Address: String,
-    Tags: Option[Seq[String]],
-    Port: Int
-  )
+                                ID: Option[String],
+                                Service: String,
+                                Address: String,
+                                Tags: Option[Seq[String]],
+                                Port: Int
+                              )
 
   case class NodeHealthJson(
-    Address: String
-  )
+                             Address: String
+                           )
 }
