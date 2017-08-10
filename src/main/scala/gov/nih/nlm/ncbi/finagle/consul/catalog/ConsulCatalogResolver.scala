@@ -117,15 +117,11 @@ object ConsulCatalogResolver {
   // https://www.consul.io/docs/agent/http/health.html#health_service
   case class HealthJson(Node: NodeHealthJson, Service: ServiceHealthJson)
 
-  case class ServiceHealthJson(
-                                ID: Option[String],
-                                Service: String,
-                                Address: String,
-                                Tags: Option[Seq[String]],
-                                Port: Int
-                              )
+  case class ServiceHealthJson(ID: Option[String],
+                               Service: String,
+                               Address: String,
+                               Tags: Option[Seq[String]],
+                               Port: Int)
 
-  case class NodeHealthJson(
-                             Address: String
-                           )
+  case class NodeHealthJson(Address: String)
 }
