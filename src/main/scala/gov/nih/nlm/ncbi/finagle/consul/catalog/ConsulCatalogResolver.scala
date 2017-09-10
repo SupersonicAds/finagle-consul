@@ -32,7 +32,7 @@ class ConsulCatalogResolver extends Resolver {
   // not used by the code, but has to be referenced here so that the gauge doesn't get garbage collected
   private val consulIndexGauge = scopedMetrics.addGauge("consul_index")(consulIndex)
 
-  private val fecthFailureCounter = scopedMetrics.counter("fetch_errors_counter")
+  private val fetchFailureCounter = scopedMetrics.counter("fetch_errors_counter")
 
   private def datacenterParam(q: ConsulQuery): List[(String, String)] = {
     q.dc
@@ -91,7 +91,7 @@ class ConsulCatalogResolver extends Resolver {
             cycle(idx)
           case Throw(t) =>
             log.warning(t, s"Exception throw while querying Consul for service discovery")
-            fecthFailureCounter.incr()
+            fetchFailureCounter.incr()
 
             timer.doLater(Duration(1, TimeUnit.SECONDS)) {
               cycle(index)
