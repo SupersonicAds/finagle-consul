@@ -109,7 +109,13 @@ class ConsulCatalogResolver extends Resolver {
 
     cycle("0")
 
-    Closable make { _ => running = false; Future.Done }
+    Closable make { _ =>
+      running = false
+
+      log.warning("The Consul announcer was stopped")
+
+      Future.Done
+    }
   }
 
   override def bind(arg: String): Var[Addr] = arg.split("!") match {
