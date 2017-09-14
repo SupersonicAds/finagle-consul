@@ -52,11 +52,19 @@ class ConsulCatalogResolver extends Resolver {
   }
 
   private def jsonToAddresses(json: JValue): Set[InetSocketAddress] = {
-    json
-      .extract[Set[HealthJson]]
-      .map { ex => new InetSocketAddress(Option(ex.Service.Address).filterNot(_.isEmpty).getOrElse(ex.Node.Address), ex.Service.Port) }
-  }
+    val result = Try {
+      json
+        .extract[Set[HealthJson]]
+        .map { ex => new InetSocketAddress(Option(ex.Service.Address).filterNot(_.isEmpty).getOrElse(ex.Node.Address), ex.Service.Port) }
+    }
+    result match {
+      case Return(addresses) => addresses
+      case Throw(t) =>
+        log.error(t, s"Failed parsing a JSON value from Consul: [$json]")
 
+        Set.empty
+    }
+  }
 
   private def fetch(hosts: String, q: ConsulQuery, idx: String): Future[Response] = {
     val client = ConsulHttpClientFactory.getClient(hosts)
