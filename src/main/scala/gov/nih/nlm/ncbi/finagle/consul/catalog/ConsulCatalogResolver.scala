@@ -51,18 +51,19 @@ class ConsulCatalogResolver extends Resolver {
     s"$path$query"
   }
 
-  private def jsonToAddresses(json: JValue): Set[InetSocketAddress] = {
+  private def jsonToAddresses(json: JValue, fallback: Set[InetSocketAddress]): Set[InetSocketAddress] = {
     val result = Try {
       json
         .extract[Set[HealthJson]]
         .map { ex => new InetSocketAddress(Option(ex.Service.Address).filterNot(_.isEmpty).getOrElse(ex.Node.Address), ex.Service.Port) }
     }
+
     result match {
       case Return(addresses) => addresses
       case Throw(t) =>
         log.error(t, s"Failed parsing a JSON value from Consul: [$json]")
 
-        Set.empty
+        fallback
     }
   }
 
@@ -83,31 +84,31 @@ class ConsulCatalogResolver extends Resolver {
   def addrOf(hosts: String, query: ConsulQuery): Var[Addr] = Var.async(Addr.Pending: Addr) { update =>
     @volatile var running = true
 
-    def cycle(index: String): Future[Unit] =
+    def cycle(index: String, currentAddresses: Set[InetSocketAddress]): Future[Unit] =
       if (running) {
         updateConsulIndex(index)
 
         fetch(hosts, query, index) transform {
           case Return(response) =>
-            val as = jsonToAddresses(parse(response.getContentString()))
+            val as = jsonToAddresses(parse(response.getContentString()), currentAddresses)
 
             log.debug(s"Fetched the following addresses for [$hosts] with [${mkPath(query, index)}]: [${as.mkString(", ")}]")
 
             update() = Addr.Bound(as.map(Address(_)))
             val idx = response.headerMap.getOrElse("X-Consul-Index", "0")
 
-            cycle(idx)
+            cycle(idx, as)
           case Throw(t) =>
             log.warning(t, s"Exception throw while querying Consul for service discovery")
             fetchFailureCounter.incr()
 
             timer.doLater(Duration(1, TimeUnit.SECONDS)) {
-              cycle(index)
+              cycle(index, currentAddresses)
             }
         }
       } else Future.Done
 
-    cycle("0")
+    cycle("0", Set.empty)
 
     Closable make { _ =>
       running = false
