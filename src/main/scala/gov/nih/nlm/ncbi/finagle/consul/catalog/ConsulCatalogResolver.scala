@@ -51,12 +51,21 @@ class ConsulCatalogResolver extends Resolver {
     s"$path$query"
   }
 
-  private def jsonToAddresses(json: JValue): Set[InetSocketAddress] = {
-    json
-      .extract[Set[HealthJson]]
-      .map { ex => new InetSocketAddress(Option(ex.Service.Address).filterNot(_.isEmpty).getOrElse(ex.Node.Address), ex.Service.Port) }
-  }
+  private def jsonToAddresses(json: JValue): Option[Set[InetSocketAddress]] = {
+    val result = Try {
+      json
+        .extract[Set[HealthJson]]
+        .map { ex => new InetSocketAddress(Option(ex.Service.Address).filterNot(_.isEmpty).getOrElse(ex.Node.Address), ex.Service.Port) }
+    }
 
+    result match {
+      case Return(addresses) => Some(addresses)
+      case Throw(t) =>
+        log.error(t, s"Failed parsing a JSON value from Consul: [$json]")
+
+        None
+    }
+  }
 
   private def fetch(hosts: String, q: ConsulQuery, idx: String): Future[Response] = {
     val client = ConsulHttpClientFactory.getClient(hosts)
@@ -81,11 +90,14 @@ class ConsulCatalogResolver extends Resolver {
 
         fetch(hosts, query, index) transform {
           case Return(response) =>
-            val as = jsonToAddresses(parse(response.getContentString()))
+            val maybeAddresses = jsonToAddresses(parse(response.getContentString()))
 
-            log.debug(s"Fetched the following addresses for [$hosts] with [${mkPath(query, index)}]: [${as.mkString(", ")}]")
+            log.debug(s"Fetched the following addresses for [$hosts] with [${mkPath(query, index)}]: [${maybeAddresses.mkString(", ")}]")
 
-            update() = Addr.Bound(as.map(Address(_)))
+            maybeAddresses.foreach { addresses => // we are not updating the state if the parsing failed
+              update() = Addr.Bound(addresses.map(Address(_)))
+            }
+
             val idx = response.headerMap.getOrElse("X-Consul-Index", "0")
 
             cycle(idx)
@@ -101,7 +113,13 @@ class ConsulCatalogResolver extends Resolver {
 
     cycle("0")
 
-    Closable make { _ => running = false; Future.Done }
+    Closable make { _ =>
+      running = false
+
+      log.warning("The Consul announcer was stopped")
+
+      Future.Done
+    }
   }
 
   override def bind(arg: String): Var[Addr] = arg.split("!") match {
