@@ -51,9 +51,9 @@ class ConsulCatalogResolver extends Resolver {
     s"$path$query"
   }
 
-  private def jsonToAddresses(json: JValue): Option[Set[InetSocketAddress]] = {
+  private def jsonToAddresses(json: String): Option[Set[InetSocketAddress]] = {
     val result = Try {
-      json
+      parse(json)
         .extract[Set[HealthJson]]
         .map { ex => new InetSocketAddress(Option(ex.Service.Address).filterNot(_.isEmpty).getOrElse(ex.Node.Address), ex.Service.Port) }
     }
@@ -88,9 +88,9 @@ class ConsulCatalogResolver extends Resolver {
       if (running) {
         updateConsulIndex(index)
 
-        fetch(hosts, query, index) transform {
+        fetch(hosts, query, index).transform {
           case Return(response) =>
-            val maybeAddresses = jsonToAddresses(parse(response.getContentString()))
+            val maybeAddresses = jsonToAddresses(response.getContentString())
 
             log.debug(s"Fetched the following addresses for [$hosts] with [${mkPath(query, index)}]: [${maybeAddresses.mkString(", ")}]")
 
@@ -102,7 +102,7 @@ class ConsulCatalogResolver extends Resolver {
 
             cycle(idx)
           case Throw(t) =>
-            log.warning(t, s"Exception throw while querying Consul for service discovery")
+            log.warning(t, s"An exception was thrown while querying Consul for service discovery")
             fetchFailureCounter.incr()
 
             timer.doLater(Duration(1, TimeUnit.SECONDS)) {
@@ -111,7 +111,9 @@ class ConsulCatalogResolver extends Resolver {
         }
       } else Future.Done
 
-    cycle("0")
+    cycle("0").onFailure { t =>
+      log.error(t, "An unexpected exception in the Consul announcer, the announcer will be stopped")
+    }
 
     Closable make { _ =>
       running = false
