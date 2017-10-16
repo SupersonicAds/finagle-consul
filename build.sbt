@@ -2,7 +2,7 @@ organization := "com.brigade"
 
 name := "finagle-consul"
 
-version := "0.1.7"
+version := "0.1.8"
 
 scalaVersion := "2.11.8"
 
