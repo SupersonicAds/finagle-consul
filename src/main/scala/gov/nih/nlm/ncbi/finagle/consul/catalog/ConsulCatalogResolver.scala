@@ -8,6 +8,7 @@ import com.twitter.finagle.util.DefaultTimer
 import com.twitter.finagle.{Addr, Address, Resolver}
 import com.twitter.logging.Logger
 import com.twitter.util._
+import gov.nih.nlm.ncbi.finagle.consul.catalog.ConsulPathMaker.mkPath
 import gov.nih.nlm.ncbi.finagle.consul.{ConsulHttpClientFactory, ConsulQuery}
 import org.json4s._
 import org.json4s.jackson.JsonMethods._
@@ -33,23 +34,6 @@ class ConsulCatalogResolver extends Resolver {
   private val consulIndexGauge = scopedMetrics.addGauge("consul_index")(consulIndex)
 
   private val fetchFailureCounter = scopedMetrics.counter("fetch_errors_counter")
-
-  private def datacenterParam(q: ConsulQuery): List[(String, String)] = {
-    q.dc
-      .map { dc => List("dc" -> dc) }
-      .getOrElse(List.empty)
-  }
-
-  private def tagParams(q: ConsulQuery): List[(String, String)] = {
-    q.tags.toList.map {"tag" -> _}
-  }
-
-  private def mkPath(q: ConsulQuery, idx: String) = {
-    val path = s"/v1/health/service/${q.name}"
-    val params = List(datacenterParam(q), tagParams(q)).flatten :+ ("passing", "true") :+ ("index", idx) :+ ("wait", "10s")
-    val query = Request.queryString(params: _*)
-    s"$path$query"
-  }
 
   private def jsonToAddresses(json: String): Option[Set[InetSocketAddress]] = {
     val result = Try {
